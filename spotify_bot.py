@@ -6,12 +6,12 @@ from ytmusicapi import YTMusic
 # Your Telegram bot token
 TOKEN = "8228790586:AAGaP0CYYvFP65Atb9OW9h-D85HrDrdYmEI"
 
-# Initialize YTMusic (no auth required for search)
+# Initialize YTMusic (no auth needed for public searches)
 ytmusic = YTMusic()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎵 Hello! Send /play <song name> to get YouTube Music link instantly."
+        "🎵 Hello! Send /play <song name> to get a YouTube Music link instantly."
     )
 
 async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -23,19 +23,21 @@ async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Searching for: {query}...")
 
     try:
+        # Search on YouTube Music
         results = ytmusic.search(query, filter="songs", limit=1)
         if not results:
-            await update.message.reply_text("❌ No results found!")
+            await update.message.reply_text("❌ No results found.")
             return
 
         song = results[0]
         title = song["title"]
-        artist = song["artists"][0]["name"]
+        artists = ", ".join([artist["name"] for artist in song["artists"]])
         video_id = song["videoId"]
+        thumbnail = song["thumbnails"][-1]["url"]
         url = f"https://music.youtube.com/watch?v={video_id}"
-        message = f"🎶 *{title}* by *{artist}*\n🔗 [Listen on YouTube Music]({url})"
-        
-        await update.message.reply_text(message, parse_mode="Markdown")
+
+        message = f"🎶 *{title}*\n👤 {artists}\n🔗 [Listen on YouTube Music]({url})"
+        await update.message.reply_photo(photo=thumbnail, caption=message, parse_mode="Markdown")
 
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
