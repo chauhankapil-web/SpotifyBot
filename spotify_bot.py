@@ -1,52 +1,42 @@
 import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from config.config import TOKEN
-import os
-TOKEN = os.environ['8228790586:AAGaP0CYYvFP65Atb9OW9h-D85HrDrdYmEI']
-import yt_dlp
+from youtubesearchpython import VideosSearch
 
-# Replace with your bot token
+# Your Telegram bot token
 TOKEN = "8228790586:AAGaP0CYYvFP65Atb9OW9h-D85HrDrdYmEI"
 
-# Make downloads folder if not exists
-if not os.path.exists("downloads"):
-    os.makedirs("downloads")
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! Send /play <song name> to download a song from YouTube.")
+    await update.message.reply_text(
+        "🎵 Hello! Send /play <song name> to get YouTube link instantly."
+    )
 
 async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Please provide a search query: /play <song name>")
+        await update.message.reply_text("⚠️ Please provide a search query: /play <song name>")
         return
 
     query = " ".join(context.args)
-    await update.message.reply_text(f"Searching and downloading: {query} ...")
-
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'noplaylist': True,
-        'outtmpl': 'downloads/%(title)s.%(ext)s',
-        'quiet': True,
-    }
+    await update.message.reply_text(f"🔍 Searching for: {query}...")
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch1:{query}", download=True)
-            video = info['entries'][0]
-            file_path = ydl.prepare_filename(video)
-        
-        # Send downloaded audio
-        await update.message.reply_audio(audio=open(file_path, 'rb'), title=video['title'])
-    
+        videos_search = VideosSearch(query, limit=1)
+        result = videos_search.result()["result"][0]
+
+        title = result["title"]
+        url = result["link"]
+        thumbnail = result["thumbnails"][0]["url"]
+
+        message = f"🎶 *{title}*\n🔗 [Watch on YouTube]({url})"
+        await update.message.reply_photo(photo=thumbnail, caption=message, parse_mode="Markdown")
+
     except Exception as e:
-        await update.message.reply_text(f"Error: {e}")
+        await update.message.reply_text(f"❌ Error: {e}")
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("play", play))
 
-    print("Bot is running...")
+    print("✅ Bot is running and ready!")
     app.run_polling()
