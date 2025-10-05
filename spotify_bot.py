@@ -1,14 +1,17 @@
 import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from youtubesearchpython import VideosSearch
+from ytmusicapi import YTMusic
 
 # Your Telegram bot token
 TOKEN = "8228790586:AAGaP0CYYvFP65Atb9OW9h-D85HrDrdYmEI"
 
+# Initialize YTMusic (no auth required for search)
+ytmusic = YTMusic()
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎵 Hello! Send /play <song name> to get YouTube link instantly."
+        "🎵 Hello! Send /play <song name> to get YouTube Music link instantly."
     )
 
 async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -20,15 +23,19 @@ async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Searching for: {query}...")
 
     try:
-        videos_search = VideosSearch(query, limit=1)
-        result = videos_search.result()["result"][0]
+        results = ytmusic.search(query, filter="songs", limit=1)
+        if not results:
+            await update.message.reply_text("❌ No results found!")
+            return
 
-        title = result["title"]
-        url = result["link"]
-        thumbnail = result["thumbnails"][0]["url"]
-
-        message = f"🎶 *{title}*\n🔗 [Watch on YouTube]({url})"
-        await update.message.reply_photo(photo=thumbnail, caption=message, parse_mode="Markdown")
+        song = results[0]
+        title = song["title"]
+        artist = song["artists"][0]["name"]
+        video_id = song["videoId"]
+        url = f"https://music.youtube.com/watch?v={video_id}"
+        message = f"🎶 *{title}* by *{artist}*\n🔗 [Listen on YouTube Music]({url})"
+        
+        await update.message.reply_text(message, parse_mode="Markdown")
 
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
