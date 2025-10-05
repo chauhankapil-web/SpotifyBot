@@ -3,10 +3,9 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from ytmusicapi import YTMusic
 
-# Your Telegram bot token
+# Telegram bot token
 TOKEN = "8228790586:AAGaP0CYYvFP65Atb9OW9h-D85HrDrdYmEI"
 
-# Initialize YTMusic (no auth needed for public searches)
 ytmusic = YTMusic()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -23,7 +22,6 @@ async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🔍 Searching for: {query}...")
 
     try:
-        # Search on YouTube Music
         results = ytmusic.search(query, filter="songs", limit=1)
         if not results:
             await update.message.reply_text("❌ No results found.")
@@ -47,5 +45,5 @@ if __name__ == "__main__":
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("play", play))
 
-    print("✅ Bot is running and ready!")
+    print("✅ Bot is running...")
     app.run_polling()
