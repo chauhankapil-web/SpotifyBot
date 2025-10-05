@@ -1,6 +1,7 @@
 import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from config.config import TOKEN
 import yt_dlp
 
 # Replace with your bot token
