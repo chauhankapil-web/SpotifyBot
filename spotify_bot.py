@@ -1,105 +1,111 @@
 import os
+import asyncio
 from dotenv import load_dotenv
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
-import yt_dlp
-from youtubesearchpython import VideosSearch
+import subprocess
+import time
 
-# Load environment variables
+# Load .env
 load_dotenv()
 
-# Tokens
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
 SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 
-# Spotify Authentication
-sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
-    client_id=SPOTIFY_CLIENT_ID,
-    client_secret=SPOTIFY_CLIENT_SECRET
-))
+# Spotify auth
+sp = spotipy.Spotify(
+    auth_manager=SpotifyClientCredentials(
+        client_id=SPOTIFY_CLIENT_ID,
+        client_secret=SPOTIFY_CLIENT_SECRET
+    )
+)
 
-# Ensure downloads folder exists
-os.makedirs("downloads", exist_ok=True)
+DOWNLOADS_DIR = "downloads"
+os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 
-# ---- /start command ----
+# Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎵 Hello! Send me a song name — I'll fetch Spotify info + YouTube audio."
+        "🎵 Send a song name — Spotify info + fast YouTube audio download."
     )
 
-# ---- Main song handler ----
+# Main handler
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text.strip()
+    if not query:
+        return
+
     await update.message.reply_text(f"🔍 Searching for: {query}...")
 
-    # === Spotify Section ===
+    # --- Spotify info ---
     try:
-        result = sp.search(q=query, limit=1, type='track')
-        if result['tracks']['items']:
-            track = result['tracks']['items'][0]
-            name = track['name']
-            artist = track['artists'][0]['name']
-            url = track['external_urls']['spotify']
-            image = track['album']['images'][0]['url']
-            preview = track['preview_url']
-
-            msg = f"🎶 *{name}* — {artist}\n🔗 [Open in Spotify]({url})"
+        res = sp.search(q=query, limit=1, type="track")
+        if res["tracks"]["items"]:
+            track = res["tracks"]["items"][0]
+            title = track["name"]
+            artist = track["artists"][0]["name"]
+            url = track["external_urls"]["spotify"]
+            img = track["album"]["images"][0]["url"]
+            preview = track.get("preview_url")
+            caption = f"🎶 *{title}* — {artist}\n🔗 [Spotify]({url})"
             if preview:
-                msg += f"\n▶️ [Preview Track]({preview})"
-
-            await update.message.reply_photo(photo=image, caption=msg, parse_mode="Markdown")
+                caption += f"\n▶️ [Preview]({preview})"
+            await update.message.reply_photo(photo=img, caption=caption, parse_mode="Markdown")
         else:
-            await update.message.reply_text("❌ No Spotify results found.")
+            await update.message.reply_text("❌ No Spotify result.")
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Spotify Error: {e}")
+        await update.message.reply_text(f"⚠️ Spotify error: {e}")
 
-    # === YouTube Section ===
+    # --- YouTube download ---
+    await update.message.reply_text("⏳ Downloading fast audio from YouTube...")
+
+    out_template = os.path.join(DOWNLOADS_DIR, "%(title)s.%(ext)s")
+    cmd = [
+        "yt-dlp",
+        "-f", "bestaudio[ext=m4a]/bestaudio",
+        "--no-playlist",
+        "-o", out_template,
+        f"ytsearch1:{query}"
+    ]
+
+    loop = asyncio.get_running_loop()
+
+    def run_download():
+        return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
     try:
-        await update.message.reply_text("🎧 Searching on YouTube...")
+        proc = await loop.run_in_executor(None, run_download)
+        if proc.returncode != 0:
+            await update.message.reply_text(f"❌ Download failed:\n{proc.stderr}")
+            return
 
-        # Fast search first
-        search = VideosSearch(query, limit=1)
-        video = search.result()['result'][0]
-        yt_url = video['link']
-        yt_title = video['title']
+        # Get the downloaded file path (latest file in downloads)
+        files = [os.path.join(DOWNLOADS_DIR, f) for f in os.listdir(DOWNLOADS_DIR)]
+        latest_file = max(files, key=os.path.getctime)
 
-        await update.message.reply_text(f"🎬 Found: {yt_title}\n🔗 {yt_url}")
-        await update.message.reply_text("⏳ Downloading audio... please wait (max 10s)")
+        # Send file via Telegram
+        with open(latest_file, "rb") as f:
+            await update.message.reply_audio(audio=f, title=os.path.basename(latest_file))
 
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'noplaylist': True,
-            'quiet': True,
-            'nocheckcertificate': True,
-            'outtmpl': 'downloads/%(title)s.%(ext)s',
-            'socket_timeout': 10,   # prevent long timeouts
-            'retries': 1,
-            'source_address': '0.0.0.0'
-        }
-
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(yt_url, download=True)
-            file_path = ydl.prepare_filename(info)
-
-        if os.path.exists(file_path):
-            with open(file_path, 'rb') as f:
-                await update.message.reply_audio(audio=f, title=info.get('title', 'Audio'))
-            os.remove(file_path)
-        else:
-            await update.message.reply_text("❌ Failed to find downloaded file.")
+        # Remove after sending
+        os.remove(latest_file)
 
     except Exception as e:
-        await update.message.reply_text(f"⚠️ YouTube Error: {e}\n(Tip: Try shorter song name or check internet.)")
+        await update.message.reply_text(f"⚠️ YouTube error: {e}")
 
-# ---- Run Bot ----
+
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
-
-    print("✅ Bot is running...")
+    print("✅ Bot running…")
     app.run_polling()
