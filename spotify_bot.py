@@ -11,9 +11,9 @@ import yt_dlp
 load_dotenv()
 
 # Tokens
-TELEGRAM_TOKEN = os.getenv("8228790586:AAGaP0CYYvFP65Atb9OW9h-D85HrDrdYmEI")
-SPOTIFY_CLIENT_ID = os.getenv("4b3caffc3855492bb007f2a856bc0eea")
-SPOTIFY_CLIENT_SECRET = os.getenv("02bf24b99c224bf2ba5b8b482b6f42f0")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 
 # Spotify API authentication
 sp = spotipy.Spotify(
