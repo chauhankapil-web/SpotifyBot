@@ -12,9 +12,8 @@ from telegram.ext import (
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import subprocess
-import time
 
-# Load .env
+# Load environment variables
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -35,7 +34,7 @@ os.makedirs(DOWNLOADS_DIR, exist_ok=True)
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🎵 Send a song name — Spotify info + fast YouTube audio download."
+        "🎵 Send a song name — Spotify info + fast YouTube audio download (cached)."
     )
 
 # Main handler
@@ -65,15 +64,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"⚠️ Spotify error: {e}")
 
-    # --- YouTube download ---
-    await update.message.reply_text("⏳ Downloading fast audio from YouTube...")
+    # --- YouTube download with caching ---
+    # Sanitize file name
+    safe_filename = "".join(c for c in query if c.isalnum() or c in " _-").rstrip()
+    cached_file_path = os.path.join(DOWNLOADS_DIR, f"{safe_filename}.m4a")
 
-    out_template = os.path.join(DOWNLOADS_DIR, "%(title)s.%(ext)s")
+    if os.path.exists(cached_file_path):
+        # Send cached file
+        await update.message.reply_text("✅ Sending cached audio...")
+        with open(cached_file_path, "rb") as f:
+            await update.message.reply_audio(audio=f, title=safe_filename)
+        return
+
+    await update.message.reply_text("⏳ Downloading audio from YouTube, please wait...")
+
     cmd = [
         "yt-dlp",
         "-f", "bestaudio[ext=m4a]/bestaudio",
         "--no-playlist",
-        "-o", out_template,
+        "--no-check-certificate",
+        "-o", cached_file_path,
         f"ytsearch1:{query}"
     ]
 
@@ -88,16 +98,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"❌ Download failed:\n{proc.stderr}")
             return
 
-        # Get the downloaded file path (latest file in downloads)
-        files = [os.path.join(DOWNLOADS_DIR, f) for f in os.listdir(DOWNLOADS_DIR)]
-        latest_file = max(files, key=os.path.getctime)
-
-        # Send file via Telegram
-        with open(latest_file, "rb") as f:
-            await update.message.reply_audio(audio=f, title=os.path.basename(latest_file))
-
-        # Remove after sending
-        os.remove(latest_file)
+        # Send downloaded file
+        with open(cached_file_path, "rb") as f:
+            await update.message.reply_audio(audio=f, title=safe_filename)
 
     except Exception as e:
         await update.message.reply_text(f"⚠️ YouTube error: {e}")
