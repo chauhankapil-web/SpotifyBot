@@ -6,7 +6,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import yt_dlp
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
 # Tokens
@@ -30,7 +30,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎵 Hello! Send me a song name and I will give Spotify info + downloadable audio from YouTube."
     )
 
-# Main handler
+# Main handler for messages
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text.strip()
     await update.message.reply_text(f"🔍 Searching for: {query}...")
@@ -58,6 +58,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- YouTube part ---
     try:
+        # Notify user before download
+        await update.message.reply_text("⏳ Downloading audio from YouTube, please wait...")
+
         ydl_opts = {
             'format': 'bestaudio/best',
             'noplaylist': True,
@@ -80,7 +83,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         await update.message.reply_text(f"❌ YouTube Error: {e}")
-
 
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
