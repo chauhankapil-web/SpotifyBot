@@ -6,7 +6,7 @@ import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials
 import yt_dlp
 
-# Load environment variables
+# Load environment variables from .env file
 load_dotenv()
 
 # Tokens
@@ -20,12 +20,12 @@ sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
     client_secret=SPOTIFY_CLIENT_SECRET
 ))
 
-# Paths
-DOWNLOAD_DIR = "downloads"
-FFMPEG_PATH = r"C:\Users\LATITUDE 5501\Downloads\Video\video\ffmpeg-8.0-essentials_build\bin"  # <-- CHANGE THIS to your ffmpeg.exe full path
+# FFmpeg path
+FFMPEG_PATH = r"C:\Users\LATITUDE 5501\Downloads\Video\video\ffmpeg-8.0-essentials_build\bin\ffmpeg.exe"  # <-- replace with your actual path
 
-if not os.path.exists(DOWNLOAD_DIR):
-    os.makedirs(DOWNLOAD_DIR)
+# Ensure downloads folder exists
+if not os.path.exists("downloads"):
+    os.makedirs("downloads")
 
 # Start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -33,7 +33,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎵 Hello! Send me a song name and I will give Spotify info + downloadable audio from YouTube."
     )
 
-# Main handler
+# Main handler for messages
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.message.text.strip()
     await update.message.reply_text(f"🔍 Searching for: {query}...")
@@ -61,44 +61,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- YouTube part ---
     try:
-        # Filename for caching
-        safe_query = query.replace(" ", "_")
-        cached_file = os.path.join(DOWNLOAD_DIR, f"{safe_query}.mp3")
+        # File path for cached audio
+        safe_name = "".join([c for c in query if c.isalnum() or c in " _-"])
+        file_path = os.path.join("downloads", f"{safe_name}.mp3")
 
-        if os.path.exists(cached_file):
-            # If file exists, send directly
-            await update.message.reply_text("✅ Serving cached audio...")
-            with open(cached_file, 'rb') as audio_file:
+        if os.path.exists(file_path):
+            # If file already exists, send it directly
+            with open(file_path, 'rb') as audio_file:
                 await update.message.reply_audio(audio=audio_file, title=query)
             return
 
-        await update.message.reply_text("⏳ Downloading audio from YouTube (may take up to 20 sec)...")
+        # Notify user before download
+        await update.message.reply_text("⏳ Downloading audio from YouTube, please wait...")
 
         ydl_opts = {
             'format': 'bestaudio/best',
             'noplaylist': True,
-            'outtmpl': os.path.join(DOWNLOAD_DIR, f'{safe_query}.%(ext)s'),
+            'outtmpl': 'downloads/%(title)s.%(ext)s',
             'quiet': True,
             'nocheckcertificate': True,
             'ffmpeg_location': FFMPEG_PATH,
-            'postprocessors': [
-                {
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }
-            ],
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
         }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(f"ytsearch1:{query}", download=True)
             video = info['entries'][0]
-            file_path = ydl.prepare_filename(video)
-            # Rename to mp3
-            mp3_path = os.path.splitext(file_path)[0] + ".mp3"
+            downloaded_file = ydl.prepare_filename(video)
+            mp3_file = os.path.splitext(downloaded_file)[0] + ".mp3"
 
-        if os.path.exists(mp3_path):
-            with open(mp3_path, 'rb') as audio_file:
+        if os.path.exists(mp3_file):
+            with open(mp3_file, 'rb') as audio_file:
                 await update.message.reply_audio(audio=audio_file, title=video['title'])
         else:
             await update.message.reply_text("❌ Failed to download audio from YouTube.")
@@ -106,10 +103,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ YouTube Error: {e}")
 
-
 if __name__ == "__main__":
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
