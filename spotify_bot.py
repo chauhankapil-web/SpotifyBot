@@ -1,47 +1,64 @@
 import os
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from ytmusicapi import YTMusic
+import spotipy
+from spotipy.oauth2 import SpotifyClientCredentials
 
-# Telegram bot token
-TOKEN = "8228790586:AAGaP0CYYvFP65Atb9OW9h-D85HrDrdYmEI"
+# Load environment variables
+load_dotenv()
 
-ytmusic = YTMusic()
+# Tokens
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎵 Hello! Send /play <song name> to get a YouTube Music link instantly."
+# Spotify API auth
+sp = spotipy.Spotify(
+    auth_manager=SpotifyClientCredentials(
+        client_id=SPOTIFY_CLIENT_ID,
+        client_secret=SPOTIFY_CLIENT_SECRET
     )
+)
 
+# Start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🎵 Hello! Send /play <song name> to get Spotify song info instantly.")
+
+# Play command
 async def play(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("⚠️ Please provide a search query: /play <song name>")
+        await update.message.reply_text("⚠️ Please provide a song name: /play <song name>")
         return
 
     query = " ".join(context.args)
     await update.message.reply_text(f"🔍 Searching for: {query}...")
 
     try:
-        results = ytmusic.search(query, filter="songs", limit=1)
-        if not results:
-            await update.message.reply_text("❌ No results found.")
+        # Search song on Spotify
+        result = sp.search(q=query, limit=1, type='track')
+        if not result['tracks']['items']:
+            await update.message.reply_text("❌ No song found.")
             return
 
-        song = results[0]
-        title = song["title"]
-        artists = ", ".join([artist["name"] for artist in song["artists"]])
-        video_id = song["videoId"]
-        thumbnail = song["thumbnails"][-1]["url"]
-        url = f"https://music.youtube.com/watch?v={video_id}"
+        track = result['tracks']['items'][0]
+        song_name = track['name']
+        artist = track['artists'][0]['name']
+        url = track['external_urls']['spotify']
+        thumbnail = track['album']['images'][0]['url']
+        preview = track['preview_url']
 
-        message = f"🎶 *{title}*\n👤 {artists}\n🔗 [Listen on YouTube Music]({url})"
-        await update.message.reply_photo(photo=thumbnail, caption=message, parse_mode="Markdown")
+        msg = f"🎶 *{song_name}* — {artist}\n🔗 [Open in Spotify]({url})"
+        if preview:
+            msg += f"\n▶️ [Preview Track]({preview})"
+
+        await update.message.reply_photo(photo=thumbnail, caption=msg, parse_mode="Markdown")
 
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
 
 if __name__ == "__main__":
-    app = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("play", play))
 
