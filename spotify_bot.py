@@ -12,7 +12,7 @@ CACHE_DIR = "cache"
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 # Path to ffmpeg if installed (optional)
-FFMPEG_PATH = r"C:\Program Files\ffmpeg8\bin"
+FFMPEG_PATH = r"C:\Program Files\ffmpeg8\bin\ffmpeg.exe"  # Update this path if necessary
 
 # Dictionary to track pending format selections
 pending_format = {}
