@@ -1,112 +1,130 @@
 import os
-from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
-import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
+import time
 import yt_dlp
+import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Load environment variables from .env file
-load_dotenv()
+BOT_TOKEN = "8228790586:AAGaP0CYYvFP65Atb9OW9h-D85HrDrdYmEI"
+bot = telebot.TeleBot(BOT_TOKEN)
 
-# Tokens
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID")
-SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET")
+# Local folder to cache downloaded songs
+CACHE_DIR = "cache"
+os.makedirs(CACHE_DIR, exist_ok=True)
 
-# Spotify authentication
-sp = spotipy.Spotify(auth_manager=SpotifyClientCredentials(
-    client_id=SPOTIFY_CLIENT_ID,
-    client_secret=SPOTIFY_CLIENT_SECRET
-))
+# Path to ffmpeg if installed (optional)
+FFMPEG_PATH = r"C:\Program Files\ffmpeg8\bin"
 
-# FFmpeg path
-FFMPEG_PATH = r"C:\Users\LATITUDE 5501\Downloads\Video\video\ffmpeg-8.0-essentials_build\bin\ffmpeg.exe"  # <-- replace with your actual path
+# Dictionary to track pending format selections
+pending_format = {}
 
-# Ensure downloads folder exists
-if not os.path.exists("downloads"):
-    os.makedirs("downloads")
+# ────────────────────────────────────────────────
+# 🧠 Utility: Download song using yt_dlp
+# ────────────────────────────────────────────────
+def download_song(query, fmt):
+    start_time = time.time()
+    cache_path = os.path.join(CACHE_DIR, f"{query}.{fmt}")
 
-# Start command
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎵 Hello! Send me a song name and I will give Spotify info + downloadable audio from YouTube."
-    )
+    # ✅ Use cache if already downloaded
+    if os.path.exists(cache_path):
+        return cache_path, 0, True
 
-# Main handler for messages
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.message.text.strip()
-    await update.message.reply_text(f"🔍 Searching for: {query}...")
-
-    # --- Spotify part ---
     try:
-        spotify_result = sp.search(q=query, limit=1, type='track')
-        if spotify_result['tracks']['items']:
-            track = spotify_result['tracks']['items'][0]
-            song_name = track['name']
-            artist = track['artists'][0]['name']
-            spotify_url = track['external_urls']['spotify']
-            thumbnail = track['album']['images'][0]['url']
-            preview = track['preview_url']
-
-            msg = f"🎶 *{song_name}* — {artist}\n🔗 [Open in Spotify]({spotify_url})"
-            if preview:
-                msg += f"\n▶️ [Preview Track]({preview})"
-            
-            await update.message.reply_photo(photo=thumbnail, caption=msg, parse_mode="Markdown")
+        # 🎧 Conditional format setup
+        if fmt == "mp3":
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": cache_path,
+                "quiet": True,
+                "noplaylist": True,
+                "ffmpeg_location": FFMPEG_PATH,
+                "postprocessors": [{
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }],
+            }
         else:
-            await update.message.reply_text("❌ No Spotify results found.")
-    except Exception as e:
-        await update.message.reply_text(f"❌ Spotify Error: {e}")
+            # m4a / webm — download directly without ffmpeg
+            ydl_opts = {
+                "format": f"bestaudio[ext={fmt}]",
+                "outtmpl": cache_path,
+                "quiet": True,
+                "noplaylist": True,
+            }
 
-    # --- YouTube part ---
-    try:
-        # File path for cached audio
-        safe_name = "".join([c for c in query if c.isalnum() or c in " _-"])
-        file_path = os.path.join("downloads", f"{safe_name}.mp3")
-
-        if os.path.exists(file_path):
-            # If file already exists, send it directly
-            with open(file_path, 'rb') as audio_file:
-                await update.message.reply_audio(audio=audio_file, title=query)
-            return
-
-        # Notify user before download
-        await update.message.reply_text("⏳ Downloading audio from YouTube, please wait...")
-
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'noplaylist': True,
-            'outtmpl': 'downloads/%(title)s.%(ext)s',
-            'quiet': True,
-            'nocheckcertificate': True,
-            'ffmpeg_location': FFMPEG_PATH,
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-        }
-
+        # 🚀 Perform download
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch1:{query}", download=True)
-            video = info['entries'][0]
-            downloaded_file = ydl.prepare_filename(video)
-            mp3_file = os.path.splitext(downloaded_file)[0] + ".mp3"
+            ydl.download([f"ytsearch1:{query}"])
 
-        if os.path.exists(mp3_file):
-            with open(mp3_file, 'rb') as audio_file:
-                await update.message.reply_audio(audio=audio_file, title=video['title'])
-        else:
-            await update.message.reply_text("❌ Failed to download audio from YouTube.")
+        elapsed_time = time.time() - start_time
+        return cache_path, elapsed_time, False
 
     except Exception as e:
-        await update.message.reply_text(f"❌ YouTube Error: {e}")
+        return None, 0, str(e)
 
-if __name__ == "__main__":
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
-    print("✅ Bot is running...")
-    app.run_polling()
+# ────────────────────────────────────────────────
+# 💬 Handle incoming messages
+# ────────────────────────────────────────────────
+@bot.message_handler(func=lambda m: True)
+def handle_message(message):
+    chat_id = message.chat.id
+    query = message.text.strip()
+
+    # Store pending query for format selection
+    pending_format[chat_id] = query
+
+    # Popup keyboard for format choice
+    markup = InlineKeyboardMarkup()
+    markup.row_width = 3
+    markup.add(
+        InlineKeyboardButton("MP3 🎵", callback_data="mp3"),
+        InlineKeyboardButton("M4A 🎧", callback_data="m4a"),
+        InlineKeyboardButton("WEBM 💽", callback_data="webm"),
+    )
+    bot.send_message(chat_id, "Select format for your song:", reply_markup=markup)
+
+
+# ────────────────────────────────────────────────
+# 🎛 Handle format selection
+# ────────────────────────────────────────────────
+@bot.callback_query_handler(func=lambda call: True)
+def callback_format(call):
+    chat_id = call.message.chat.id
+    fmt = call.data
+    query = pending_format.get(chat_id)
+
+    if not query:
+        bot.send_message(chat_id, "No song requested.")
+        return
+
+    bot.send_message(chat_id, f"🎶 Searching and downloading '{query}' in {fmt.upper()} format... Please wait ⏳")
+
+    # Download or fetch from cache
+    file_path, elapsed, cached = download_song(query, fmt)
+
+    if not file_path:
+        bot.send_message(chat_id, f"❌ YouTube Error: {cached}")
+        return
+
+    # Calculate and show time
+    if cached:
+        msg_time = "⚡ Served instantly from cache!"
+    else:
+        msg_time = f"✅ Downloaded in {elapsed:.2f} seconds."
+
+    bot.send_message(chat_id, msg_time)
+
+    # Send the audio file to Telegram
+    with open(file_path, "rb") as f:
+        bot.send_audio(chat_id, f, caption=f"{query} ({fmt.upper()})")
+
+    # Clear pending
+    pending_format.pop(chat_id, None)
+
+
+# ────────────────────────────────────────────────
+# 🚀 Start bot
+# ────────────────────────────────────────────────
+print("🎧 Spotify Downloader Bot is running...")
+bot.infinity_polling()
